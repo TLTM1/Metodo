@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-PROLOG_UNKNOWN">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calculadora de Métodos Numéricos</title>
     <!-- 1. Math.js para evaluar funciones y derivadas -->
@@ -649,7 +649,7 @@
                 };
             } catch (e) {
                 // Si falla (ej. función no soportada), lanza un error
-                throw new Error(`No se pudo auto-derivar f(x). Introdúcela manualmente. Error: ${e.message}`);
+                throw new Error(`No se pudo auto-derivar f(x). Introdúcela manually. Error: ${e.message}`);
             }
         }
 
@@ -761,6 +761,7 @@
          * 2. CEREBRO PARA MÉTODOS ABIERTOS (Newton, Secante, Punto Fijo)
          */
         async function calcularMetodoAbierto(metodo) {
+            // Corrección: el prefijo de punto fijo es 'pf'
             const id_pref = (metodo === 'pfijo') ? 'pf' : metodo.substring(0, 1); // n, s, pf
             const resultadoId = `resultado-${metodo}`;
 
@@ -922,7 +923,7 @@
                                             <h4 class="text-lg font-bold text-blue-800">Resultado Final</h4>
                                             <p class="text-xl">Raíz (xn) ≈ <b class="font-mono">${xn.toFixed(10)}</b></p>
                                         </div>`;
-                mostrarResultado(resultadoId, tablaHtml);
+                mostrarResultado(resultadoId, tablaHtml + resultadoFinal);
 
             } catch (e) {
                 mostrarError(resultadoId, e.message);
@@ -1347,26 +1348,47 @@
                     }
                 };
 
-                // Añadir reintento simple
+                // Añadir reintentos con backoff exponencial
                 let response;
-                try {
-                     response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                } catch (fetchError) {
-                    // Reintento en caso de fallo de red
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                     response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
+                let retries = 3;
+                let delay = 1000;
+                for (let i = 0; i < retries; i++) {
+                    try {
+                        response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (response.ok) break; // Éxito
+                        if (response.status >= 400 && response.status < 500) break; // Error del cliente, no reintentar
+                        
+                        // Error de servidor (5xx) o rate limit (429), reintentar
+                        if (i === retries - 1) break; // Último intento fallido
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2; // Backoff exponencial
+
+                    } catch (fetchError) {
+                        // Error de red, reintentar
+                        if (i === retries - 1) throw fetchError; // Lanzar error en el último intento
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2;
+                    }
                 }
-                
+
                 if (!response.ok) {
-                    throw new Error(`Error de API: ${response.statusText}`);
+                    // --- ESTA ES LA CORRECCIÓN ---
+                    // Intenta leer el error de la API, si no, usa el statusText
+                    let errorBody = await response.text();
+                    try {
+                        // El error de la API de Gemini suele ser un JSON
+                        const errorJson = JSON.parse(errorBody);
+                        errorBody = errorJson.error?.message || errorBody;
+                    } catch (parseError) {
+                        // No es JSON, usa el texto plano si existe (o el statusText)
+                        errorBody = errorBody || response.statusText;
+                    }
+                    throw new Error(`Error de API: ${response.status} ${errorBody}`);
+                    // --- FIN DE LA CORRECCIÓN ---
                 }
 
                 const result = await response.json();
@@ -1395,7 +1417,7 @@
                         sugerenciasDiv.appendChild(sugDiv);
                     });
                 } else {
-                    throw new Error("No se pudieron generar sugerencias.");
+                    throw new Error("No se pudieron generar sugerencias (la respuesta estaba vacía).");
                 }
 
             } catch (e) {
@@ -1480,7 +1502,7 @@
                  return `${sign}${best_n / commonDivisor}/${best_d / commonDivisor}`;
             }
 
-            // Si no, devolver el decimal con la precisión de 10
+            // Si no, devolver el decimal
             return value.toFixed(10);
         }
 
